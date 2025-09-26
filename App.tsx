@@ -1,5 +1,3 @@
-
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import { createRoot } from 'react-dom/client';
@@ -18,8 +16,73 @@ import saveAs from 'file-saver';
 import { v4 as uuidv4 } from 'uuid';
 import * as htmlToImage from 'html-to-image';
 import JSZip from 'jszip';
-import { ZoomIn, ZoomOut, Maximize, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Copy, Trash2, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, Unlock, X } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Copy, Trash2, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, Unlock, X, Undo2, Redo2 } from 'lucide-react';
 
+const useHistoryState = <T,>(initialPresent: T) => {
+    const [state, setState] = useState<{
+        past: T[];
+        present: T;
+        future: T[];
+    }>({
+        past: [],
+        present: initialPresent,
+        future: [],
+    });
+
+    const canUndo = state.past.length > 0;
+    const canRedo = state.future.length > 0;
+
+    const undo = useCallback(() => {
+        if (!canUndo) return;
+        setState((currentState) => {
+            const newPresent = currentState.past[currentState.past.length - 1];
+            const newPast = currentState.past.slice(0, currentState.past.length - 1);
+            const newFuture = [currentState.present, ...currentState.future];
+            return { past: newPast, present: newPresent, future: newFuture };
+        });
+    }, [canUndo]);
+
+    const redo = useCallback(() => {
+        if (!canRedo) return;
+        setState((currentState) => {
+            const newPresent = currentState.future[0];
+            const newFuture = currentState.future.slice(1);
+            const newPast = [...currentState.past, currentState.present];
+            return { past: newPast, present: newPresent, future: newFuture };
+        });
+    }, [canRedo]);
+
+    const set = useCallback((action: React.SetStateAction<T>) => {
+        setState((currentState) => {
+            const newPresent = action instanceof Function ? action(currentState.present) : action;
+            if (JSON.stringify(newPresent) === JSON.stringify(currentState.present)) {
+                return currentState;
+            }
+            const newFuture: T[] = [];
+            const newPast = [...currentState.past, currentState.present];
+            return { past: newPast, present: newPresent, future: newFuture };
+        });
+    }, []);
+
+    const reset = useCallback((newPresent: T) => {
+        setState({
+            past: [],
+            present: newPresent,
+            future: [],
+        });
+    }, []);
+
+
+    return {
+        state: state.present,
+        set,
+        reset,
+        undo,
+        redo,
+        canUndo,
+        canRedo,
+    };
+};
 
 const AddLayoutModal: React.FC<{
     isOpen: boolean;
@@ -120,7 +183,15 @@ const AddLayoutModal: React.FC<{
 
 const App: React.FC = () => {
     const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [posts, setPosts] = useState<Post[]>([]);
+    const {
+        state: posts,
+        set: setPosts,
+        reset: resetPosts,
+        undo: undoPosts,
+        redo: redoPosts,
+        canUndo: canUndoPosts,
+        canRedo: canRedoPosts
+    } = useHistoryState<Post[]>([]);
     const [brandKits, setBrandKits] = useState<BrandKit[]>([]);
     const [activeBrandKitId, setActiveBrandKitId] = useState<string | null>(null);
     const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
@@ -181,7 +252,7 @@ const App: React.FC = () => {
     const handleLogout = () => {
         localStorage.removeItem('postyUser');
         setCurrentUser(null);
-        setPosts([]);
+        resetPosts([]);
         setBrandKits([]);
         setActiveBrandKitId(null);
         toast('Você saiu.', { icon: '👋' });
@@ -335,7 +406,7 @@ const App: React.FC = () => {
         }
         
         setIsLoading(true);
-        setPosts([]);
+        resetPosts([]);
         setSelectedPostId(null);
         setSelectedElementId(null);
     
@@ -713,7 +784,7 @@ const App: React.FC = () => {
                     : post
             )
         );
-    }, [selectedPostId]);
+    }, [selectedPostId, setPosts]);
 
     const handleAddElement = (type: 'text' | 'image' | 'gradient' | 'shape' | 'qrcode', options?: { src?: string, shape?: 'rectangle' | 'circle' }) => {
         if (!selectedPostId) return;
@@ -1318,7 +1389,25 @@ const App: React.FC = () => {
                 onUnlinkAccount={handleUnlinkAccount}
             />
             <div className="flex flex-col h-screen font-sans bg-gray-950 text-gray-100" style={{ minWidth: '1400px' }}>
-                <header className="w-full bg-zinc-900 border-b border-zinc-800 px-6 py-2 flex justify-end items-center flex-shrink-0">
+                <header className="w-full bg-zinc-900 border-b border-zinc-800 px-6 py-2 flex justify-between items-center flex-shrink-0">
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={undoPosts}
+                            disabled={!canUndoPosts}
+                            className="p-2 rounded-md hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                            aria-label="Undo"
+                        >
+                            <Undo2 className="w-5 h-5" />
+                        </button>
+                        <button
+                            onClick={redoPosts}
+                            disabled={!canRedoPosts}
+                            className="p-2 rounded-md hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                            aria-label="Redo"
+                        >
+                            <Redo2 className="w-5 h-5" />
+                        </button>
+                    </div>
                     <UserProfile 
                         user={currentUser}
                         onLogin={handleLogin}
