@@ -3,6 +3,8 @@ import { Toaster, toast } from 'react-hot-toast';
 import { createRoot } from 'react-dom/client';
 import { Post, BrandKit, PostSize, AnyElement, TextElement, ImageElement, GradientElement, BackgroundElement, ShapeElement, QRCodeElement, FontDefinition, LayoutTemplate, BrandAsset, User } from './types';
 import { POST_SIZES, INITIAL_FONTS, PRESET_BRAND_KITS } from './constants';
+import { CredentialResponse, googleLogout } from '@react-oauth/google';
+import { jwtDecode } from 'jwt-decode';
 import * as geminiService from './services/geminiService';
 import * as freepikService from './services/freepikService';
 import ControlPanel from './components/ControlPanel';
@@ -223,7 +225,7 @@ const App: React.FC = () => {
 
     // --- User Authentication and Data Management ---
     useEffect(() => {
-        // Mock session check
+        // Check for a saved user session
         const savedUser = localStorage.getItem('postyUser');
         if (savedUser) {
             const user = JSON.parse(savedUser) as User;
@@ -234,22 +236,48 @@ const App: React.FC = () => {
         }
     }, []);
 
-    const handleLogin = () => {
-        const mockUser: User = {
-            id: 'user_12345',
-            name: 'Usuário Convidado',
-            email: 'guest@posty.app',
-            avatar: 'https://i.pravatar.cc/150?u=guest@posty.app',
-            linkedAccounts: {},
-        };
-        localStorage.setItem('postyUser', JSON.stringify(mockUser));
-        localStorage.setItem(`brandKits_${mockUser.id}`, JSON.stringify(PRESET_BRAND_KITS));
-        setCurrentUser(mockUser);
-        setBrandKits(PRESET_BRAND_KITS);
-        toast.success('Login realizado com sucesso!');
+    const handleLogin = (credentialResponse: CredentialResponse) => {
+        if (!credentialResponse.credential) {
+            toast.error("Falha no login: credencial não encontrada.");
+            return;
+        }
+
+        try {
+            const decoded = jwtDecode<{ sub: string; name: string; email: string; picture: string; }>(credentialResponse.credential);
+
+            const newUser: User = {
+                id: decoded.sub,
+                name: decoded.name,
+                email: decoded.email,
+                avatar: decoded.picture,
+                linkedAccounts: {},
+            };
+
+            // Check for existing user data to preserve linked accounts
+            const existingUser = localStorage.getItem('postyUser');
+            if (existingUser) {
+                const parsedUser = JSON.parse(existingUser) as User;
+                if (parsedUser.id === newUser.id) {
+                    newUser.linkedAccounts = parsedUser.linkedAccounts;
+                }
+            }
+
+            localStorage.setItem('postyUser', JSON.stringify(newUser));
+
+            const savedKits = localStorage.getItem(`brandKits_${newUser.id}`);
+            setBrandKits(savedKits ? JSON.parse(savedKits) : PRESET_BRAND_KITS);
+
+            setCurrentUser(newUser);
+            toast.success(`Bem-vindo(a), ${newUser.name.split(' ')[0]}!`);
+
+        } catch (error) {
+            console.error("Erro ao decodificar o token de login:", error);
+            toast.error("Ocorreu um erro ao tentar fazer o login.");
+        }
     };
 
     const handleLogout = () => {
+        googleLogout();
         localStorage.removeItem('postyUser');
         setCurrentUser(null);
         resetPosts([]);

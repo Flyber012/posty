@@ -1,11 +1,12 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { User } from '../types';
-import { LogIn, LogOut, Settings, ChevronDown, User as UserIcon } from 'lucide-react';
+import { LogOut, Settings, ChevronDown } from 'lucide-react';
+import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 
 interface UserProfileProps {
     user: User | null;
-    onLogin: () => void;
+    onLogin: (credentialResponse: CredentialResponse) => void;
     onLogout: () => void;
     onManageAccounts: () => void;
 }
@@ -26,13 +27,15 @@ const UserProfile: React.FC<UserProfileProps> = ({ user, onLogin, onLogout, onMa
 
     if (!user) {
         return (
-            <button
-                onClick={onLogin}
-                className="flex items-center justify-center bg-zinc-700 hover:bg-zinc-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-            >
-                <LogIn className="w-4 h-4 mr-2" />
-                Fazer Login com Google
-            </button>
+            <GoogleLogin
+                onSuccess={onLogin}
+                onError={() => {
+                    console.error('Falha no login com o Google');
+                }}
+                theme="filled_black"
+                text="signin_with"
+                shape="pill"
+            />
         );
     }
 
